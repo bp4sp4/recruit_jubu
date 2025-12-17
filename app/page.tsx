@@ -127,7 +127,7 @@ export default function Home() {
                   animation: 'blinkBg 0.8s infinite',
                 }}
               >
-                파트너스 신청하기 →
+                신청하기 →
               </button>
             )}
           </section>
@@ -156,7 +156,7 @@ export default function Home() {
             animation: 'blinkBg 0.8s infinite',
           }}
         >
-          파트너스 신청하기 →
+          신청하기 →
         </button>
       )}
 
