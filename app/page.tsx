@@ -8,24 +8,29 @@ import Footer from '@/components/Footer'
 export default function Home() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [buttonColor, setButtonColor] = useState<'black' | 'blue'>('black')
-  const [showButton, setShowButton] = useState(true)
+  const [showSectionButton, setShowSectionButton] = useState(false)
+  const [showFixedButton, setShowFixedButton] = useState(false)
   const footerRef = useRef<HTMLElement>(null)
   const mainRef = useRef<HTMLElement>(null)
+  const titleRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     const handleScroll = () => {
-      if (!footerRef.current || !mainRef.current) return
+      if (!footerRef.current || !mainRef.current || !titleRef.current) return
 
       const footerTop = footerRef.current.offsetTop
       const scrollPosition = window.scrollY + window.innerHeight
-      const mainBottom = mainRef.current.offsetTop + mainRef.current.offsetHeight
+      const titleTop = titleRef.current.offsetTop
+      const titleBottom = titleRef.current.offsetTop + titleRef.current.offsetHeight
+      const viewportTop = window.scrollY
+      const viewportBottom = window.scrollY + window.innerHeight
 
-      // 푸터 영역에 도달하면 버튼 숨김
-      if (scrollPosition >= footerTop - 100) {
-        setShowButton(false)
-      } else {
-        setShowButton(true)
-      }
+      // 타이틀 섹션이 뷰포트 내에 있는지 확인
+      const isTitleInViewport = viewportTop < titleBottom && viewportBottom > titleTop
+
+      // 섹션 내에 있으면 섹션 버튼 표시, 벗어나면 고정 버튼 표시 (항상 표시)
+      setShowSectionButton(isTitleInViewport)
+      setShowFixedButton(!isTitleInViewport)
 
       // 메인 영역의 중간 지점을 기준으로 색상 변경
       const mainMiddle = mainRef.current.offsetTop + mainRef.current.offsetHeight / 2
@@ -85,21 +90,47 @@ export default function Home() {
          
       
 
-          {/* 메인 타이틀 */}
-          <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-4">
-            월 평균 150만원 수익
-          </h1>
-          
-          {/* 서브 타이틀 */}
-          <p className="text-3xl md:text-4xl font-bold text-red-600 mb-8">
-            이제 여러분의 차례입니다
-          </p>
+          {/* 신청 섹션 */}
+          <section ref={titleRef} className="applySection flex flex-col justify-center items-center" style={{ height: '100vh' }}>
+            <div className="titleBox text-center">
+              <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-4">
+                월 평균 150만원 수익
+              </h1>
+              
+              {/* 서브 타이틀 */}
+              <p className="tit text-3xl md:text-4xl font-bold text-red-600 mb-8">
+                이제 여러분의 차례입니다
+              </p>
 
-          {/* 디스클레이머 */}
-          <div className="text-sm text-gray-500 space-y-1 mt-12">
-            <p>*24년8월~25년7월 수익자 기준</p>
-            <p>*수익은 보험 체결 후 발생하며 개인 차가 있을 수 있음</p>
-          </div>
+              {/* 디스클레이머 */}
+              <div className="desc text-sm text-gray-500 space-y-1 mt-12 mb-8">
+                <p>*24년8월~25년7월 수익자 기준</p>
+                <p>*수익은 보험 체결 후 발생하며 개인 차가 있을 수 있음</p>
+              </div>
+            </div>
+
+            {/* 섹션 내 버튼 */}
+            {showSectionButton && (
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="btn text-white text-center font-bold shadow-lg hover:shadow-xl"
+                style={{
+                  width: '780px',
+                  height: '150px',
+                  marginTop: '46px',
+                  borderRadius: '20px',
+                  backgroundColor: '#000',
+                  fontSize: '48px',
+                  fontFamily: 'Pretendard, sans-serif',
+                  fontWeight: 700,
+                  lineHeight: 'normal',
+                  animation: 'blinkBg 0.8s infinite',
+                }}
+              >
+                파트너스 신청하기 →
+              </button>
+            )}
+          </section>
         </div>
         </div>
       </main>
@@ -107,8 +138,8 @@ export default function Home() {
       {/* 푸터 */}
       <Footer ref={footerRef} />
 
-      {/* 고정 버튼 - 스크롤에 따라 색상 변경, 푸터 영역에서 숨김 */}
-      {showButton && (
+      {/* 고정 버튼 - 섹션을 벗어나면 따라다님 */}
+      {showFixedButton && (
         <button
           onClick={() => setIsModalOpen(true)}
           className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-40 text-white text-center font-bold shadow-lg hover:shadow-xl"
@@ -117,13 +148,12 @@ export default function Home() {
             height: '150px',
             marginTop: '46px',
             borderRadius: '20px',
-            background: buttonColor === 'black' ? '#000' : '#2b7fff',
+            backgroundColor: '#000',
             fontSize: '48px',
             fontFamily: 'Pretendard, sans-serif',
             fontWeight: 700,
             lineHeight: 'normal',
-            animation: buttonColor === 'black' ? 'blinkBg 0.8s infinite' : 'none',
-            transition: 'background-color 0.3s ease',
+            animation: 'blinkBg 0.8s infinite',
           }}
         >
           파트너스 신청하기 →
