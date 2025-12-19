@@ -74,7 +74,7 @@ export default function Home() {
           {/* 채용공고 이미지 */}
           <div className=" flex justify-center">
             <img
-              src="/main__desktop.png"
+              src="/main_desktop.png"
               alt="강남지점 채용공고"
               className="max-w-full h-auto  object-cover"
               style={{ maxWidth: '1000px', width: '100%' }}
