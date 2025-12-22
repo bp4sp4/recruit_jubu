@@ -431,7 +431,7 @@ ${app.checkbox_selection && app.checkbox_selection.length > 0 ? `선택 항목: 
         month: '2-digit',
         day: '2-digit',
       }).replace(/\./g, '').replace(/\s/g, '')
-      const fileName = `상담신청관리_${dateStr}.xlsx`
+      const fileName = `주부지원관리_${dateStr}.xlsx`
 
       // Excel 파일 다운로드
       XLSX.writeFile(wb, fileName)
