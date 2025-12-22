@@ -11,8 +11,12 @@ export default function AdminDashboardClient() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [toastMessage, setToastMessage] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const router = useRouter()
   const supabase = createClient()
+  
+  const ITEMS_PER_PAGE = 10
 
   useEffect(() => {
     loadApplications()
@@ -39,7 +43,24 @@ export default function AdminDashboardClient() {
 
       if (error) throw error
 
-      setApplications(data || [])
+      // 전달완료된 것들을 최하위로, 전달대기 항목들을 최신순으로 정렬
+      const sortedData = (data || []).sort((a, b) => {
+        const aDelivered = !!a.delivered_at
+        const bDelivered = !!b.delivered_at
+        
+        // 전달완료된 항목은 항상 아래로
+        if (aDelivered && !bDelivered) return 1
+        if (!aDelivered && bDelivered) return -1
+        
+        // 둘 다 전달완료이거나 둘 다 전달대기인 경우, 최신순으로 정렬
+        const aDate = new Date(a.created_at || 0).getTime()
+        const bDate = new Date(b.created_at || 0).getTime()
+        return bDate - aDate
+      })
+
+      setApplications(sortedData)
+      // 데이터가 변경되면 첫 페이지로 리셋
+      setCurrentPage(1)
     } catch (err: any) {
       setError(err.message || '데이터를 불러오는데 실패했습니다.')
     } finally {
@@ -81,8 +102,29 @@ export default function AdminDashboardClient() {
         throw error
       }
 
-      // 목록 새로고침
-      await loadApplications()
+      // 목록 새로고침 (정렬 포함)
+      const { data: allData, error: fetchError } = await supabase
+        .from('consultation_applications')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (!fetchError && allData) {
+        const sortedData = allData.sort((a, b) => {
+          const aDelivered = !!a.delivered_at
+          const bDelivered = !!b.delivered_at
+          if (aDelivered && !bDelivered) return 1
+          if (!aDelivered && bDelivered) return -1
+          const aDate = new Date(a.created_at || 0).getTime()
+          const bDate = new Date(b.created_at || 0).getTime()
+          return bDate - aDate
+        })
+        setApplications(sortedData)
+        // 삭제 후 현재 페이지가 비어있으면 이전 페이지로 이동
+        const totalPages = Math.ceil(sortedData.length / ITEMS_PER_PAGE)
+        if (currentPage > totalPages && totalPages > 0) {
+          setCurrentPage(totalPages)
+        }
+      }
     } catch (err: any) {
       console.error('Delete failed:', err)
       setError(err.message || '삭제에 실패했습니다. Supabase RLS 정책을 확인해주세요.')
@@ -114,8 +156,24 @@ export default function AdminDashboardClient() {
 
       console.log('Delivery update successful:', data)
 
-      // 목록 새로고침
-      await loadApplications()
+      // 목록 새로고침 (정렬 포함)
+      const { data: allData, error: fetchError } = await supabase
+        .from('consultation_applications')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (!fetchError && allData) {
+        const sortedData = allData.sort((a, b) => {
+          const aDelivered = !!a.delivered_at
+          const bDelivered = !!b.delivered_at
+          if (aDelivered && !bDelivered) return 1
+          if (!aDelivered && bDelivered) return -1
+          const aDate = new Date(a.created_at || 0).getTime()
+          const bDate = new Date(b.created_at || 0).getTime()
+          return bDate - aDate
+        })
+        setApplications(sortedData)
+      }
       
       // 성공 토스트 메시지
       setToastMessage(isDelivered ? '전달처리되었습니다' : '전달처리 취소되었습니다')
@@ -155,6 +213,155 @@ export default function AdminDashboardClient() {
 신청일시: ${app.created_at ? formatDate(app.created_at) : '-'}
 ${app.checkbox_selection && app.checkbox_selection.length > 0 ? `선택 항목: ${app.checkbox_selection.join(', ')}\n` : ''}`
     copyToClipboard(info, '지원자 정보')
+  }
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      const currentPageItems = applications.slice(
+        (currentPage - 1) * ITEMS_PER_PAGE,
+        currentPage * ITEMS_PER_PAGE
+      )
+      const newSelectedIds = new Set(selectedIds)
+      currentPageItems.forEach((app) => {
+        if (app.id) newSelectedIds.add(app.id)
+      })
+      setSelectedIds(newSelectedIds)
+    } else {
+      const currentPageItems = applications.slice(
+        (currentPage - 1) * ITEMS_PER_PAGE,
+        currentPage * ITEMS_PER_PAGE
+      )
+      const newSelectedIds = new Set(selectedIds)
+      currentPageItems.forEach((app) => {
+        if (app.id) newSelectedIds.delete(app.id)
+      })
+      setSelectedIds(newSelectedIds)
+    }
+  }
+
+  const handleSelectItem = (id: string, checked: boolean) => {
+    const newSelectedIds = new Set(selectedIds)
+    if (checked) {
+      newSelectedIds.add(id)
+    } else {
+      newSelectedIds.delete(id)
+    }
+    setSelectedIds(newSelectedIds)
+  }
+
+  const isAllSelected = () => {
+    const currentPageItems = applications.slice(
+      (currentPage - 1) * ITEMS_PER_PAGE,
+      currentPage * ITEMS_PER_PAGE
+    )
+    if (currentPageItems.length === 0) return false
+    return currentPageItems.every((app) => app.id && selectedIds.has(app.id))
+  }
+
+  const handleBulkDelivery = async () => {
+    if (selectedIds.size === 0) {
+      setToastMessage('선택된 항목이 없습니다')
+      setTimeout(() => setToastMessage(''), 2000)
+      return
+    }
+
+    if (!confirm(`선택한 ${selectedIds.size}개 항목을 전달완료 처리하시겠습니까?`)) {
+      return
+    }
+
+    try {
+      setError('')
+      const now = new Date().toISOString()
+      
+      const { error: updateError } = await supabase
+        .from('consultation_applications')
+        .update({ delivered_at: now })
+        .in('id', Array.from(selectedIds))
+
+      if (updateError) throw updateError
+
+      setToastMessage(`${selectedIds.size}개 항목이 전달완료 처리되었습니다`)
+      setTimeout(() => setToastMessage(''), 2000)
+      setSelectedIds(new Set())
+
+      // 목록 새로고침
+      const { data: allData, error: fetchError } = await supabase
+        .from('consultation_applications')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (!fetchError && allData) {
+        const sortedData = allData.sort((a, b) => {
+          const aDelivered = !!a.delivered_at
+          const bDelivered = !!b.delivered_at
+          if (aDelivered && !bDelivered) return 1
+          if (!aDelivered && bDelivered) return -1
+          const aDate = new Date(a.created_at || 0).getTime()
+          const bDate = new Date(b.created_at || 0).getTime()
+          return bDate - aDate
+        })
+        setApplications(sortedData)
+      }
+    } catch (err: any) {
+      console.error('일괄 전달 실패:', err)
+      setError(err.message || '일괄 전달 처리에 실패했습니다.')
+      setToastMessage('일괄 전달 실패')
+      setTimeout(() => setToastMessage(''), 2000)
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) {
+      setToastMessage('선택된 항목이 없습니다')
+      setTimeout(() => setToastMessage(''), 2000)
+      return
+    }
+
+    if (!confirm(`선택한 ${selectedIds.size}개 항목을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`)) {
+      return
+    }
+
+    try {
+      setError('')
+      const { error: deleteError } = await supabase
+        .from('consultation_applications')
+        .delete()
+        .in('id', Array.from(selectedIds))
+
+      if (deleteError) throw deleteError
+
+      setToastMessage(`${selectedIds.size}개 항목이 삭제되었습니다`)
+      setTimeout(() => setToastMessage(''), 2000)
+      setSelectedIds(new Set())
+
+      // 목록 새로고침
+      const { data: allData, error: fetchError } = await supabase
+        .from('consultation_applications')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (!fetchError && allData) {
+        const sortedData = allData.sort((a, b) => {
+          const aDelivered = !!a.delivered_at
+          const bDelivered = !!b.delivered_at
+          if (aDelivered && !bDelivered) return 1
+          if (!aDelivered && bDelivered) return -1
+          const aDate = new Date(a.created_at || 0).getTime()
+          const bDate = new Date(b.created_at || 0).getTime()
+          return bDate - aDate
+        })
+        setApplications(sortedData)
+        const totalPages = Math.ceil(sortedData.length / ITEMS_PER_PAGE)
+        if (currentPage > totalPages && totalPages > 0) {
+          setCurrentPage(totalPages)
+        }
+      }
+    } catch (err: any) {
+      console.error('일괄 삭제 실패:', err)
+      setError(err.message || '일괄 삭제에 실패했습니다.')
+      setToastMessage('일괄 삭제 실패')
+      setTimeout(() => setToastMessage(''), 2000)
+    }
   }
 
   const handleExportToExcel = () => {
@@ -296,23 +503,61 @@ ${app.checkbox_selection && app.checkbox_selection.length > 0 ? `선택 항목: 
             <p className="text-blue-200 text-lg">신청 내역이 없습니다.</p>
           </div>
         ) : (
-          <div className="bg-black/40 backdrop-blur-sm rounded-2xl border border-blue-500/30 shadow-2xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-blue-600/30">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-white">전달 상태</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-white">이름</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-white">연락처</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-white">지역</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-white">유입 경로</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-white">개인정보수집 동의</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-white">신청일시</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-white">관리</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-blue-500/20">
-                  {applications.map((app) => {
+          <>
+            {selectedIds.size > 0 && (
+              <div className="mb-4 p-4 bg-blue-600/20 border border-blue-500/30 rounded-lg flex items-center justify-between">
+                <span className="text-blue-200">
+                  {selectedIds.size}개 항목이 선택되었습니다
+                </span>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleBulkDelivery}
+                    className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
+                  >
+                    일괄 전달
+                  </button>
+                  <button
+                    onClick={handleBulkDelete}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                  >
+                    일괄 삭제
+                  </button>
+                  <button
+                    onClick={() => setSelectedIds(new Set())}
+                    className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm"
+                  >
+                    선택 해제
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="bg-black/40 backdrop-blur-sm rounded-2xl border border-blue-500/30 shadow-2xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-blue-600/30">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-white">
+                        <input
+                          type="checkbox"
+                          checked={isAllSelected()}
+                          onChange={(e) => handleSelectAll(e.target.checked)}
+                          className="w-5 h-5 rounded border-2 border-blue-400 bg-transparent checked:bg-blue-500 checked:border-blue-500 focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                        />
+                      </th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-white">전달 상태</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-white">이름</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-white">연락처</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-white">지역</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-white">유입 경로</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-white">개인정보수집 동의</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-white">신청일시</th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-white">관리</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-blue-500/20">
+                    {applications
+                      .slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
+                      .map((app) => {
                     // 유입 경로 표시 로직
                     const getSourceDisplay = () => {
                       if (app.source) {
@@ -350,8 +595,16 @@ ${app.checkbox_selection && app.checkbox_selection.length > 0 ? `선택 항목: 
                           isDelivered 
                             ? 'bg-green-500/20 hover:bg-green-500/25' 
                             : 'hover:bg-blue-500/10'
-                        }`}
+                        } ${app.id && selectedIds.has(app.id) ? 'bg-blue-500/30' : ''}`}
                       >
+                        <td className="px-6 py-4 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={app.id ? selectedIds.has(app.id) : false}
+                            onChange={(e) => app.id && handleSelectItem(app.id, e.target.checked)}
+                            className="w-5 h-5 rounded border-2 border-blue-400 bg-transparent checked:bg-blue-500 checked:border-blue-500 focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                          />
+                        </td>
                         <td className="px-6 py-4 text-sm">
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
@@ -412,12 +665,34 @@ ${app.checkbox_selection && app.checkbox_selection.length > 0 ? `선택 항목: 
                 </tbody>
               </table>
             </div>
-            <div className="px-6 py-4 bg-blue-600/20 border-t border-blue-500/30">
-              <p className="text-sm text-blue-200">
-                총 {applications.length}건의 신청이 있습니다.
-              </p>
+              <div className="px-6 py-4 bg-blue-600/20 border-t border-blue-500/30 flex justify-between items-center">
+                <p className="text-sm text-blue-200">
+                  총 {applications.length}건의 신청이 있습니다.
+                </p>
+                {applications.length > ITEMS_PER_PAGE && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
+                    >
+                      이전
+                    </button>
+                    <span className="text-sm text-blue-200">
+                      {currentPage} / {Math.ceil(applications.length / ITEMS_PER_PAGE)}
+                    </span>
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(Math.ceil(applications.length / ITEMS_PER_PAGE), prev + 1))}
+                      disabled={currentPage >= Math.ceil(applications.length / ITEMS_PER_PAGE)}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm"
+                    >
+                      다음
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>
