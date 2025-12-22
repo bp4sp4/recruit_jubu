@@ -103,7 +103,7 @@ export default function Home() {
               </p>
               <div className="h-[8px] md:h-[24px]"></div>
               <p className="text-[17px] text-[#4e5968] md:text-[20px] font-medium">
-              <span className="text-[#2b7fff]">월요일</span>에 연락드릴게요.
+              <span className="text-[#2b7fff]">1일 안</span>에 연락드릴게요.
               </p>
             </div>
 
